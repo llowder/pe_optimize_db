@@ -1,0 +1,88 @@
+#! /bin/bash
+
+#utility vars
+declare -r PROGNAME=${0##*/}
+declare -r DATABASEUSER='pe-postgres'
+declare -r SUDO_CMD=$(which sudo)
+declare -r -i E_OK=0
+declare -r -i E_GENERIC_FAILURE=1
+declare -r SHORT_OPTSTRING="hm:p:"
+declare -r LONG_OPTSTRING="help,mode:,path:"
+#declare -r DATABASE_NAMES=( "console" "pe-activity" "pe-classifier" "pe-rbac" "pe-puppetdb" "pe-postgres" )
+declare -r DATABASE_NAMES=( "console" )
+declare -r PSQL_BIN="psql"
+
+#default values
+declare reindex='true'
+declare vacuum='false'
+declare psql_path='/opt/puppet/bin'
+declare opt_mode='reindex'
+
+#utility functions
+function fail_sauce {
+  echo -e "$*"
+  exit ${E_GENERIC_FAILURE}
+  return ${E_OK} # This will never be hit
+}
+
+function usage {
+  local msg="\n$(basename "${0}") [-h] [-m mode] [-p path]"
+        msg+="\n"
+        msg+="\nwhere:"
+        msg+="\n"
+        msg+="\n- -h or --help"
+        msg+="\n  -Description: Outputs usage information"
+        msg+="\n- -m or --mode"
+        msg+="\n  -Default: reindex"
+        msg+="\n  -Acceptable values: reindex, vacuum, reindex+vacuum"
+        msg+="\n  -Description: The mode for which to optimize."
+        msg+="\n- -p or --path"
+        msg+="\n  -Default: /opt/puppet/bin"
+        msg+="\n  -Description: The path to psql"
+        msg+="\n"
+  echo -e "${msg}"
+  return ${E_OK}
+}
+
+ARGS=$(getopt -s bash -o ${SHORT_OPTSTRING} -l ${LONG_OPTSTRING} -n ${PROGNAME} -- "$@")
+
+eval set -- "$ARGS"
+
+while true; do
+  case "$1" in 
+    -h | --help) usage; exit ${E_OK};;
+    -m | --mode) opt_mode="$2"; shift; break ;;
+    -p | --path) 
+      psql_path="$2"
+      [[ -f ${psql_path}/psql ]] || fail_sauce "Could not find ${psql_path}/psql. Please specify a valid path."
+      shift
+      break ;;
+    --) shift; break ;;
+  esac
+done
+
+case "${opt_mode}" in
+  'reindex' ) reindex='true'; vacuum='false';;
+  'vacuum' ) reindex='false'; vacuum='true';;
+  'reindex+vacuum' ) reindex='true'; vacuum='true';;
+  * ) echo -e "Unrecognized mode, using defaults.";;
+esac
+
+psql_command="${SUDO_CMD} -u ${DATABASEUSER} ${psql_path}/${PSQL_BIN}"
+
+if [[ "${reindex}" == 'true' ]] ; then
+  echo "Reindexing tables. This may take a while."
+  for d in ${DATABASE_NAMES[*]}; do
+    echo "Reindexing tables in ${d}."
+    ${psql_command} -d ${d} -c "REINDEX DATABASE ${d}"
+  done
+fi
+
+if [[ "${vacuum}" == 'true' ]] ; then
+  echo "Optimizing table space. This may take a while."
+  ${psql_command} -c 'VACUUM FULL'
+fi
+
+echo "All done."
+
+exit ${E_OK}
