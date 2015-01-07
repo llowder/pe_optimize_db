@@ -1,9 +1,12 @@
 #! /bin/bash
 
+set -u
+set -e
+
 #utility vars
 declare -r PROGNAME=${0##*/}
 declare -r DATABASEUSER='pe-postgres'
-declare -r SUDO_CMD=$(which sudo)
+declare -r SUDO_CMD="$(which sudo)"
 declare -r -i E_OK=0
 declare -r -i E_GENERIC_FAILURE=1
 declare -r SHORT_OPTSTRING="hm:p:"
@@ -11,6 +14,8 @@ declare -r LONG_OPTSTRING="help,mode:,path:"
 #declare -r DATABASE_NAMES=( "console" "pe-activity" "pe-classifier" "pe-rbac" "pe-puppetdb" "pe-postgres" )
 declare -r DATABASE_NAMES=( "console" )
 declare -r PSQL_BIN="psql"
+
+declare -r DBUSER_HOME="$(eval echo ~$DATABASEUSER)"
 
 #default values
 declare reindex='true'
@@ -44,6 +49,10 @@ function usage {
   return ${E_OK}
 }
 
+#sanity checks
+[[ -x "${SUDO_CMD}" ]] || fail_sauce "sudo command at '${SUDO_CMD}' not found or not executable. Aborting."
+[[ -d "${DBUSER_HOME}" ]] || fail_sauce "${DATABASEUSER}'s home does not exist or is not accessible.  Aborting."
+
 ARGS=$(getopt -s bash -o ${SHORT_OPTSTRING} -l ${LONG_OPTSTRING} -n ${PROGNAME} -- "$@")
 
 eval set -- "$ARGS"
@@ -68,14 +77,16 @@ case "${opt_mode}" in
   * ) echo -e "Unrecognized mode, using defaults.";;
 esac
 
-cd ~${DATABASEUSER}
+#This is needed to prevent the reindex command from trying to access/write to CWD for the script
+cd $DBUSER_HOME
+
 psql_command="${SUDO_CMD} -u ${DATABASEUSER} ${psql_path}/${PSQL_BIN}"
 
 if [[ "${reindex}" == 'true' ]] ; then
   echo "Reindexing tables. This may take a while."
-  for d in ${DATABASE_NAMES[*]}; do
-    echo "Reindexing tables in ${d}."
-    ${psql_command} -d ${d} -c "REINDEX DATABASE ${d}"
+  for database in ${DATABASE_NAMES[*]}; do
+    echo "Reindexing tables in ${database}."
+    ${psql_command} -d ${database} -c "REINDEX DATABASE ${database}"
   done
 fi
 
