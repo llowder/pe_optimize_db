@@ -68,6 +68,7 @@ case "${opt_mode}" in
   * ) echo -e "Unrecognized mode, using defaults.";;
 esac
 
+cd ~${DATABASEUSER}
 psql_command="${SUDO_CMD} -u ${DATABASEUSER} ${psql_path}/${PSQL_BIN}"
 
 if [[ "${reindex}" == 'true' ]] ; then
